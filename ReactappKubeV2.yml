@@ -1,0 +1,201 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: reactapp
+
+---
+#Cluster IP for backend DB
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo-cluster
+  namespace: reactapp
+  labels:
+    db: mongo
+spec:
+  selector:
+    db: mongo
+  ports:
+    - port: 27017
+      targetPort: 27017
+---
+# volume claim for backend DB
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dbclaim
+  namespace: reactapp
+  labels:
+    db: mongo
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: local-storage
+
+---
+#volume for backend DB
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mongo-volume
+  namespace: reactapp
+  labels:
+    db: mongo
+spec:
+  storageClassName: local-storage
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/mongodata"
+    type: DirectoryOrCreate
+
+---
+#Deployment for backend DB
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: reactapp
+  labels:
+    db: mongo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      db: mongo
+  template:
+    metadata:
+      name: db-pods
+      namespace: reactapp
+      labels:
+        db: mongo
+    spec:
+      containers:
+      - name: db-containers
+        image: mongo
+        ports:
+        - containerPort: 27017
+        volumeMounts:
+        - name: mongo-storage
+          mountPath: /data/db
+        env:
+        - name: MONGO_INITDB_ROOT_USERNAME
+          value: root
+        - name: MONGO_INITDB_ROOT_PASSWORD
+          value: mypassword
+      volumes:
+      - name: mongo-storage
+        persistentVolumeClaim:
+          claimName: dbclaim
+
+---
+#Nodeport service for react client
+apiVersion: v1
+kind: Service
+metadata:
+  name: react-client
+  namespace: reactapp
+  labels:
+    web: reactclient
+spec:
+  type: NodePort
+  selector:
+    web: reactclient
+  ports:
+    - port: 80
+      targetPort: 80
+---
+# secret to pull image
+apiVersion: v1
+kind: Secret
+metadata:
+  name: appregistrykey
+  namespace: reactapp
+data:
+  .dockerconfigjson: <base64_encoded_file>
+type: kubernetes.io/dockerconfigjson
+
+---
+# Deployment for react client
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: react-app
+  namespace: reactapp
+  labels:
+    web: reactclient
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      web: reactclient
+  template:
+    metadata:
+      name: client-pods
+      namespace: reactapp
+      labels:
+        web: reactclient
+    spec:
+      containers:
+      - name: client-containers
+        image: <priv_registry>/reactclient:1.0
+        ports:
+        - containerPort: 80
+      imagePullSecrets:
+      - name: appregistrykey
+
+
+---
+#Cluster IP service for backend API
+
+apiVersion: v1
+kind: Service
+metadata: 
+  name: flask-api-cluster
+  namespace: reactapp
+  labels:
+    backend: flaskapi
+spec:
+  selector:
+    backend: flaskapi
+  ports:
+    - port: 5000
+      targetPort: 5000
+
+---
+# deployment for the backend API
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-api
+  namespace: reactapp
+  labels:
+    backend: flaskapi
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      backend: flaskapi
+  template:
+    metadata:
+      name: api-pods
+      namespace: reactapp
+      labels:
+        backend: flaskapi
+    spec:
+      containers:
+      - name: api-containers
+        image: <priv_registry>/custflaskapi:1.0
+        ports:
+        - containerPort: 5000
+        env:
+        - name: MONGO_URL
+          value: mongodb://root:mypassword@mongo-cluster:27017/admin
+      imagePullSecrets:
+      - name: appregistrykey
