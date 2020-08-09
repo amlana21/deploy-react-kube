@@ -1,0 +1,81 @@
+pipeline{
+    agent any
+    environment{
+        MODE='PROD'
+        MASTERNODE=<prod master node name>
+        AWS_ACCESS_KEY_ID=<AWS_ACCESS_KEY>
+        AWS_SECRET_ACCESS_KEY=<AWS_ACCESS_KEY>
+        AWS_DEFAULT_REGION="us-east-1"
+        DEPLOYCOMMAND="kubectl apply -f /tmp/reactappkube-1.yml"
+        KUBEFILENAME="reactappkube-132-1.yml"
+        LOCALFILENAME="reactappkube-1.yml"
+    }
+
+    stages{
+        stage('deploy'){
+            when{
+               environment name:'MODE',value:'PROD'
+            }
+            environment {
+                NODEKEY = credentials('NODE_KEYS')
+                KUBEFILECMD="aws s3 cp s3://kubefiles-ac/$KUBEFILENAME /tmp/$LOCALFILENAME"
+            }
+            steps{
+                sh '''cd chef_cookbook
+                      cd kubenode
+                      cd .chef
+                      aws s3 cp <s3_for_chef_key> <chef_key_name>
+                      aws s3 cp <s3_for_ssh_key> <ssh_key_name>
+                      aws s3 cp <s3_for_knife_file> <knife_file_name>
+                      cd ..
+                      knife ssh name:$MASTERNODE "$KUBEFILECMD" --ssh-user ubuntu -i $NODEKEY --attribute cloud.public_hostname
+                      knife ssh name:$MASTERNODE "$DEPLOYCOMMAND" --ssh-user ubuntu -i $NODEKEY --attribute cloud.public_hostname'''                           
+            }
+            post{
+                failure{
+                    //slack step
+                    slackSend color: "bad", message: "Build#: $BUILD_NUMBER: Deployment failed to Production. Please check the logs."
+                }
+                success{
+                    //slack step
+                     slackSend color: "good", message: "Build#: $BUILD_NUMBER: Deployment successful on Production."
+                }
+            }
+
+        }
+        stage('validation'){
+            when{
+                environment name:'MODE',value:'PROD'
+            }
+            environment {
+                NODEKEY = credentials('NODE_KEYS')
+                PROJECTNAME="${currentBuild.projectName}"
+            }
+            steps{
+                script{
+                    sleep(80)
+                }
+                sh '''cd chef_cookbook
+                      cd kubenode  
+                      knife ssh name:$MASTERNODE 'kubectl run testbox --image=busybox  -n reactapp -- /bin/sh -c "sleep 10d"' --ssh-user ubuntu -i $NODEKEY --attribute cloud.public_hostname
+                      knife ssh name:$MASTERNODE 'kubectl exec -it pod/testbox -n reactapp -- wget react-client' --ssh-user ubuntu -i $NODEKEY --attribute cloud.public_hostname
+                      knife ssh name:$MASTERNODE 'kubectl exec -it pod/testbox -n reactapp -- cat index.html' --ssh-user ubuntu -i $NODEKEY --attribute cloud.public_hostname'''
+                    
+            }
+            post{
+                failure{
+                    slackSend color: "bad", message: "Build#: $BUILD_NUMBER: Validation failed for the deployment"
+                }
+                aborted{
+                    slackSend color: "bad", message: "Build#: $BUILD_NUMBER: Validation failed for the deployment and pipeline aborted"
+                }
+                success{    
+                     //slack step
+                     slackSend color: "good", message: "Build#: $BUILD_NUMBER: Deployment validation passed. Application is live now."
+                }
+            }
+        }
+        
+
+    }
+}

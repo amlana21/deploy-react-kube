@@ -4,6 +4,23 @@ metadata:
   name: reactapp
 
 ---
+# Nodeport Service to for backend DB
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+  namespace: reactapp
+  labels:
+    db: mongo
+spec:
+  type: NodePort
+  selector:
+    db: mongo
+  ports:
+    - port: 27017
+      targetPort: 27017
+
+---
 #Cluster IP for backend DB
 apiVersion: v1
 kind: Service
@@ -108,6 +125,7 @@ spec:
     web: reactclient
   ports:
     - port: 80
+      nodePort: 30020
       targetPort: 80
 ---
 # secret to pull image
@@ -143,12 +161,30 @@ spec:
     spec:
       containers:
       - name: client-containers
-        image: <priv_registry>/reactclient:1.0
+        image: <priv_registry>/reactclient:113
         ports:
         - containerPort: 80
       imagePullSecrets:
       - name: appregistrykey
 
+
+---
+# nodeport service for backend API
+
+apiVersion: v1
+kind: Service
+metadata: 
+  name: flask-api
+  namespace: reactapp
+  labels:
+    backend: flaskapi
+spec:
+  type: NodePort
+  selector:
+    backend: flaskapi
+  ports:
+    - port: 5000
+      targetPort: 5000
 
 ---
 #Cluster IP service for backend API
@@ -191,7 +227,7 @@ spec:
     spec:
       containers:
       - name: api-containers
-        image: <priv_registry>/custflaskapi:1.0
+        image: <priv_registry>/custflaskapi:113
         ports:
         - containerPort: 5000
         env:

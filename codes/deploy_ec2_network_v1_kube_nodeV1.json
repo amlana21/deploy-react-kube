@@ -1,0 +1,85 @@
+{
+    "AWSTemplateFormatVersion":"2010-09-09",
+    "Description":"Kube Node",
+    "Parameters":{
+        "KeyP":{
+            "Type":"AWS::EC2::KeyPair::KeyName",
+            "Description":"Please select Key"
+        },
+        "InstanceType":{
+            "Type":"String",
+            "AllowedValues":["t2.micro","t2.small","t2.medium"],
+            "Description":"Select the Instance Type"
+        },
+        "SecurityGrpId":{
+            "Type":"String",
+            "Description":"The security group ID for the node"
+        },
+        "SubnetIdVal":{
+            "Type":"String",
+            "Description":"The subnet ID for the node"
+        }
+    },
+    "Mappings":{
+        "RegionMap":{
+            "us-east-1":{
+                "micro":"ami-026c8acd92718196b"
+            },
+            "us-west-2":{
+                "micro":"ami-068670db424b01e9a"
+            }
+        }
+    },
+    "Resources":{
+        "NodeEC2":{
+            "Type": "AWS::EC2::Instance",
+            "Properties":{
+                "ImageId":{
+                    "Fn::FindInMap":[
+                        "RegionMap",{"Ref":"AWS::Region"},"micro"
+                    ]
+                },
+                "InstanceType":{"Ref":"InstanceType"},
+                "KeyName":{
+                    "Ref":"KeyP"
+                },
+                "Tags":[
+                    {
+                        "Key":"Name",
+                        "Value":"Kube Node"
+                    }
+                ],
+                "NetworkInterfaces":[
+                    {
+                        "AssociatePublicIpAddress": "true",
+                        "DeviceIndex": "0",
+                        "GroupSet": [{ "Ref" : "SecurityGrpId" }],
+                        "SubnetId": { "Ref" : "SubnetIdVal" }
+                    }
+                ]
+            }
+
+        },
+        "AssociateEIP":{
+            "Type" : "AWS::EC2::EIPAssociation",
+            "Properties" : {
+                "AllocationId" : "eipalloc-014be4efb26de86f4",
+                "InstanceId" : { "Ref":"NodeEC2" }
+              }
+          }
+    },
+    "Outputs":{
+        "InstanceId":{
+            "Description":"The instance",
+            "Value":{
+                "Ref":"NodeEC2"
+            }
+        },
+        "Instanceip":{
+            "Description":"Public IP",
+            "Value":{
+                "Fn::GetAtt":["NodeEC2","PublicIp"]
+            }
+        }
+    }
+}
